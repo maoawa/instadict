@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "packs": [
+    {
+      "id": "english-english",
+      "version": "2026.09.14",
+      "schemaVersion": 2,
+      "entryCount": 235716,
+      "byteCount": 68931584,
+      "sha256": "231253aaed2d36b1757b810fd72e14b327782253644ffe47ac33bfc17c065b24",
+      "url": "https://fastcdn.candyrect.com/instadict/english-english-2026.09.14.sqlite"
+    },
+    {
+      "id": "english-chinese",
+      "version": "2026.09.14",
+      "schemaVersion": 2,
+      "entryCount": 231752,
+      "byteCount": 60805120,
+      "sha256": "dea080e8e9c9d37767a942544119abb0212cbf0c48c4c32521df1c0121fa3667",
+      "url": "https://fastcdn.candyrect.com/instadict/english-chinese-2026.09.14.sqlite"
+    },
+    {
+      "id": "chinese-english",
+      "version": "2026.09.14",
+      "schemaVersion": 2,
+      "entryCount": 121293,
+      "byteCount": 30973952,
+      "sha256": "627b3e1b15338c433ce8d8c2fdbd689252faa9b711cda266ec52cd9e9cc00436",
+      "url": "https://fastcdn.candyrect.com/instadict/chinese-english-2026.09.14.sqlite"
+    }
+  ]
+}

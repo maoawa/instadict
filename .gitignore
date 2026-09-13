@@ -1,0 +1,14 @@
+.DS_Store
+.build/
+.dictionary-sources/
+build/
+build-*/
+*.xcuserstate
+xcuserdata/
+__pycache__/
+
+# Generated CDN artifacts; keep the catalog, notices and upload instructions.
+/Distribution/*.zip
+/Distribution/Dictionaries/*.sqlite
+/Distribution/Dictionaries/*.building
+/Distribution/Dictionaries/*.gz
