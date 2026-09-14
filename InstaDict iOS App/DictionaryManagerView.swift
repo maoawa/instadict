@@ -6,7 +6,6 @@ struct DictionaryManagerView: View {
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
-        NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 14) {
@@ -14,14 +13,17 @@ struct DictionaryManagerView: View {
                             .font(.system(size: 34)).foregroundStyle(.tint)
                         Text("A word away.")
                             .font(.system(.largeTitle, design: .serif, weight: .bold))
-                        Text("Choose your dictionaries. Download once, then look up words offline on your Apple Watch.")
+                        Text("Download dictionaries for offline lookup on this iPhone. You can also send them to your Apple Watch.")
                             .font(.body).foregroundStyle(.secondary)
-                        Label(sync.connectionMessage, systemImage: "applewatch")
+                        Label(L10n.message(sync.connectionMessage), systemImage: "applewatch")
                             .font(.footnote).foregroundStyle(.secondary)
+                        if let message = sync.watchStatusMessage {
+                            Text(L10n.message(message)).font(.footnote).foregroundStyle(.secondary)
+                        }
                     }
                     .padding(.vertical, 8)
                     if let message = downloads.catalogMessage {
-                        Label(message, systemImage: "info.circle")
+                        Label(L10n.message(message), systemImage: "info.circle")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     ForEach(downloads.packs) { pack in
@@ -46,11 +48,16 @@ struct DictionaryManagerView: View {
                     .disabled(downloads.isRefreshing)
                 }
             }
-            .refreshable { await downloads.refreshCatalog() }
-            .onChange(of: phase) { _, value in
-                if value == .active { Task { await sync.refreshLocal() } }
+            .refreshable {
+                sync.checkWatchStatus()
+                await downloads.refreshCatalog()
             }
-        }
+            .onChange(of: phase) { _, value in
+                if value == .active {
+                    sync.checkWatchStatus()
+                    Task { await sync.refreshLocal() }
+                }
+            }
     }
 }
 
@@ -62,19 +69,26 @@ private struct DictionaryCard: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var installed: InstalledPack? { sync.local.installed.first { $0.pack.id == pack.id } }
-    private var isCurrent: Bool { installed?.pack == pack }
+    private var isCurrent: Bool { installed?.pack.hasSameContent(as: pack) == true }
+    private var isOnWatch: Bool { sync.watch.installed.contains { $0.pack.hasSameContent(as: pack) } }
     private var inProgress: Bool { downloads.progress[pack.id] != nil || downloads.verifying.contains(pack.id) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(pack.id.title).font(.title3.weight(.semibold))
-                    Text(pack.id.subtitle).font(.subheadline).foregroundStyle(.secondary)
+                    Text(LocalizedStringKey(pack.id.title)).font(.title3.weight(.semibold))
+                    Text(LocalizedStringKey(pack.id.subtitle)).font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
                 Menu {
-                    if installed != nil {
+                    if let installed {
+                        if sync.watch.installed.contains(where: { $0.pack.id == pack.id }) {
+                            Button("Send to Watch again", systemImage: "arrow.up.applewatch") {
+                                Task { await sync.send(installed.pack) }
+                            }
+                            .disabled(sync.transfers[pack.id] != nil)
+                        }
                         Button("Remove from iPhone", systemImage: "iphone.slash", role: .destructive) {
                             Task { await sync.removeFromPhone(pack.id) }
                         }
@@ -85,15 +99,24 @@ private struct DictionaryCard: View {
                     Button("Remove from both", systemImage: "trash", role: .destructive) { confirmingRemoval = true }
                 } label: { Image(systemName: "ellipsis").frame(width: 32, height: 32) }
                 .disabled(inProgress || sync.busy.contains(pack.id))
-                .accessibilityLabel("Manage \(pack.id.title)")
+                .accessibilityLabel(L10n.ui("Manage %@", L10n.ui(pack.id.title)))
             }
-            Text("\(pack.entryCount.formatted()) entries · \(ByteCountFormatter.string(fromByteCount: pack.byteCount, countStyle: .file))")
+            Text(L10n.ui("%@ entries · %@", L10n.number(pack.entryCount), L10n.fileSize(pack.byteCount)))
                 .font(.caption).foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 6) {
-                Label(installed == nil ? "Not downloaded" : isCurrent ? "Downloaded on iPhone" : "Update available", systemImage: "iphone")
-                Label(sync.status(for: pack.id), systemImage: "applewatch")
+                Label(LocalizedStringKey(installed == nil ? "Not downloaded" : isCurrent ? "Downloaded on iPhone" : "Update available"), systemImage: "iphone")
+                Label(L10n.message(sync.status(for: pack.id)), systemImage: "applewatch")
             }
             .font(.footnote).foregroundStyle(.secondary)
+            if sync.hasPendingCommand(pack.id) {
+                Button(LocalizedStringKey(sync.isCheckingWatch ? "Checking Watch…" : "Check Watch status"), systemImage: "arrow.clockwise") {
+                    sync.checkWatchStatus()
+                }
+                .font(.footnote)
+                .disabled(sync.isCheckingWatch)
+                Text("Open InstaDict on your Watch to check its installed dictionaries. File transfers can continue in the background.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             NavigationLink {
                 DictionarySourcesView(id: pack.id)
             } label: {
@@ -104,40 +127,95 @@ private struct DictionaryCard: View {
             }
             .font(.footnote)
             if let error = downloads.errors[pack.id] {
-                Text(error).font(.footnote).foregroundStyle(.red)
+                Text(L10n.message(error)).font(.footnote).foregroundStyle(.red)
             }
             if let progress = downloads.progress[pack.id] {
                 ProgressView(value: progress) {
                     HStack {
-                        Text("Downloading · \(Int(progress * 100))%")
+                        Text(L10n.ui("Downloading · %@%%", L10n.number(Int(progress * 100))))
                         Spacer()
                         Button("Cancel") { downloads.cancel(pack.id) }
                     }.font(.footnote)
                 }
             } else if downloads.verifying.contains(pack.id) {
                 ProgressView("Verifying dictionary…").font(.footnote)
-            } else {
+            } else if !isCurrent || !isOnWatch {
                 Button {
-                    if isCurrent { Task { await sync.send(pack) } }
-                    else { downloads.download(pack) }
+                    if isCurrent, let installed { Task { await sync.send(installed.pack) } }
+                    else { Task { await downloads.download(pack) } }
                 } label: {
-                    Label(isCurrent ? "Send to Watch" : installed == nil ? "Download & send" : "Download update",
+                    Label(LocalizedStringKey(isCurrent ? "Send to Watch" : installed == nil ? "Download on iPhone" : "Download update"),
                           systemImage: isCurrent ? "arrow.up.applewatch" : "arrow.down.circle")
                         .foregroundStyle(colorScheme == .dark ? .black : .white)
                         .frame(maxWidth: .infinity).padding(.vertical, 4)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(sync.busy.contains(pack.id) || sync.transfers[pack.id] != nil)
+                .disabled(downloads.isRefreshing || downloads.isRestoring || sync.busy.contains(pack.id) || sync.transfers[pack.id] != nil)
             }
         }
         .padding(20)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24))
-        .confirmationDialog("Remove \(pack.id.title) from both devices?", isPresented: $confirmingRemoval, titleVisibility: .visible) {
+        .confirmationDialog(L10n.ui("Remove %@ from both devices?", L10n.ui(pack.id.title)), isPresented: $confirmingRemoval, titleVisibility: .visible) {
+            Button("Cancel", role: .cancel) {}
             Button("Remove from both", role: .destructive) {
                 sync.removeFromWatch(pack.id)
                 Task { await sync.removeFromPhone(pack.id) }
             }
         } message: { Text("You can download it again later. Watch removal will finish when it reconnects.") }
+    }
+}
+
+struct DictionaryDownloadSourceView: View {
+    @Environment(DictionaryDownloads.self) private var downloads
+    @State private var address = ""
+    @State private var message: String?
+    @State private var failed = false
+
+    var body: some View {
+        Form {
+            Section {
+                Text(downloads.sourceDisplayName)
+                    .font(.footnote).textSelection(.enabled)
+            } header: { Text("Current source") }
+            Section {
+                TextField("example.com/dictionaries", text: $address, axis: .vertical)
+                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .accessibilityLabel("Source address")
+                Button("Check & save") { apply(address) }
+                    .disabled(!downloads.canChangeSource || address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Use default source") { apply(DictionaryCatalog.remoteURL.absoluteString) }
+                    .disabled(!downloads.canChangeSource)
+            } header: { Text("Catalog address") } footer: {
+                Text("Enter a website and folder, such as example.com/dictionaries. HTTPS and manifest.json are added automatically. The source is checked before saving. Installed dictionaries stay available offline.")
+            }
+            if downloads.isRefreshing {
+                ProgressView("Checking catalog…")
+            } else if !downloads.canChangeSource {
+                Text("Wait for downloads to finish before changing the source.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            if let message {
+                Text(L10n.message(message)).font(.footnote).foregroundStyle(failed ? Color.red : Color.secondary)
+            }
+        }
+        .navigationTitle("Download source")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { address = downloads.editableSourceAddress }
+    }
+
+    private func apply(_ input: String) {
+        message = nil
+        Task {
+            do {
+                try await downloads.changeSource(to: input)
+                address = downloads.editableSourceAddress
+                failed = false
+                message = "Source saved."
+            } catch {
+                failed = true
+                message = L10n.errorMessage(error)
+            }
+        }
     }
 }
 
@@ -151,9 +229,9 @@ private struct DictionarySourcesView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(id.title).font(.title2.bold())
+                Text(LocalizedStringKey(id.title)).font(.title2.bold())
                 Text(id.sourceSummary).font(.headline)
-                Text(notices).font(.footnote).textSelection(.enabled)
+                Text(L10n.message(notices)).font(.footnote).textSelection(.enabled)
             }.padding(20).frame(maxWidth: 640, alignment: .leading)
         }
         .navigationTitle("Dictionary sources")

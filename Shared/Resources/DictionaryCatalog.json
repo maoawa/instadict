@@ -1,32 +1,32 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "packs": [
     {
       "id": "english-english",
       "version": "2026.09.14",
-      "schemaVersion": 2,
-      "entryCount": 235716,
-      "byteCount": 68931584,
-      "sha256": "231253aaed2d36b1757b810fd72e14b327782253644ffe47ac33bfc17c065b24",
-      "url": "https://fastcdn.candyrect.com/instadict/english-english-2026.09.14.sqlite"
+      "schemaVersion": 3,
+      "entryCount": 235717,
+      "byteCount": 24682496,
+      "sha256": "b8a542a3f275324183f7694c1fbbcbc1925cd98ac2ca062b0a44acbd7c7bc8ae",
+      "url": "english-english-2026.09.14.sqlite"
     },
     {
       "id": "english-chinese",
       "version": "2026.09.14",
-      "schemaVersion": 2,
-      "entryCount": 231752,
-      "byteCount": 60805120,
-      "sha256": "dea080e8e9c9d37767a942544119abb0212cbf0c48c4c32521df1c0121fa3667",
-      "url": "https://fastcdn.candyrect.com/instadict/english-chinese-2026.09.14.sqlite"
+      "schemaVersion": 3,
+      "entryCount": 768739,
+      "byteCount": 54341632,
+      "sha256": "8ea59e3bdd18a964101256b620aabc4a5f120f92dcb9cbd107993c8e607d4f0e",
+      "url": "english-chinese-2026.09.14.sqlite"
     },
     {
       "id": "chinese-english",
       "version": "2026.09.14",
-      "schemaVersion": 2,
+      "schemaVersion": 3,
       "entryCount": 121293,
-      "byteCount": 30973952,
-      "sha256": "627b3e1b15338c433ce8d8c2fdbd689252faa9b711cda266ec52cd9e9cc00436",
-      "url": "https://fastcdn.candyrect.com/instadict/chinese-english-2026.09.14.sqlite"
+      "byteCount": 10399744,
+      "sha256": "6d1c3a848d066ec07989e75365b2fe5b70f2af812bcf8649040af83efa8896e5",
+      "url": "chinese-english-2026.09.14.sqlite"
     }
   ]
 }

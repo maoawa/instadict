@@ -54,6 +54,25 @@ actor DictionaryLibrary {
         }
     }
 
+    /// A direct Watch download/removal participates in the same ordering as
+    /// companion transfers. Record intent before downloading, not on completion.
+    func beginLocalChange(_ id: DictionaryID, pack: DictionaryPack?) throws -> PackCommand {
+        try load()
+        let largest = state.commands.map(\.revision).max() ?? 0
+        guard largest < Int64.max else { throw PackError.invalidCatalog }
+        let command = PackCommand(id: id, revision: max(Int64(Date().timeIntervalSince1970 * 1000), largest + 1), pack: pack)
+        try apply([command])
+        return command
+    }
+
+    func cancelLocalChange(_ command: PackCommand) throws {
+        try load()
+        guard state.commands.first(where: { $0.id == command.id }) == command else { return }
+        // Preserve the installed copy, while preventing this canceled download
+        // or an earlier companion transfer from installing later.
+        _ = try beginLocalChange(command.id, pack: state.installed.first { $0.pack.id == command.id }?.pack)
+    }
+
     @discardableResult
     func install(_ source: URL, pack: DictionaryPack, command: PackCommand? = nil) throws -> InstalledPack {
         try load()
@@ -159,13 +178,32 @@ actor DictionaryLibrary {
             return String(cString: text)
         }
         guard try scalar("PRAGMA quick_check") == "ok",
-              try scalar("PRAGMA user_version") == "2",
+              try scalar("PRAGMA user_version") == String(pack.schemaVersion),
               try scalar("SELECT value FROM metadata WHERE key='pack_id'") == pack.id.rawValue,
               try scalar("SELECT value FROM metadata WHERE key='version'") == pack.version,
               try scalar("SELECT count(*) FROM entries") == String(pack.entryCount),
               try scalar("SELECT count(*) FROM aliases") != "" else { throw PackError.invalidDatabase }
-        guard try scalar("SELECT count(*) FROM entries WHERE payload_size < 1 OR payload_size > 2000000 OR length(payload) < 1") == "0" else {
-            throw PackError.invalidDatabase
+        if pack.schemaVersion == 3 {
+            // Validate every index range without inflating the whole dictionary
+            // on installation. Subtraction avoids integer-overflow bypasses.
+            guard try scalar("""
+                SELECT count(*) FROM blocks
+                WHERE typeof(payload_size) != 'integer' OR payload_size < 1 OR payload_size > 2000000
+                   OR typeof(payload) != 'blob' OR length(payload) < 1
+                """) == "0",
+                try scalar("""
+                SELECT count(*) FROM entries e LEFT JOIN blocks b ON b.id=e.block_id
+                WHERE b.id IS NULL OR typeof(e.block_id) != 'integer'
+                   OR typeof(e.byte_offset) != 'integer' OR typeof(e.payload_size) != 'integer'
+                   OR e.byte_offset < 0 OR e.payload_size < 1 OR e.byte_offset > b.payload_size
+                   OR e.payload_size > b.payload_size - e.byte_offset
+                """) == "0" else { throw PackError.invalidDatabase }
+        } else {
+            guard try scalar("""
+                SELECT count(*) FROM entries WHERE typeof(payload_size) != 'integer'
+                   OR payload_size < 1 OR payload_size > 2000000
+                   OR typeof(payload) != 'blob' OR length(payload) < 1
+                """) == "0" else { throw PackError.invalidDatabase }
         }
         let firstWord = try scalar("SELECT word FROM entries ORDER BY word LIMIT 1")
         guard let entry = try? DictionaryStore(databaseURL: url).lookup(firstWord).entry,

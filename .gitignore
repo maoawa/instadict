@@ -12,3 +12,7 @@ __pycache__/
 /Distribution/Dictionaries/*.sqlite
 /Distribution/Dictionaries/*.building
 /Distribution/Dictionaries/*.gz
+
+/Cloudflare/node_modules/
+/Cloudflare/.wrangler/
+/Cloudflare/.env*

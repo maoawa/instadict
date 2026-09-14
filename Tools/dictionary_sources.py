@@ -34,7 +34,7 @@ POS = {
     "num": "number", "aux": "auxiliary verb", "abbr": "abbreviation",
     "pl": "plural noun", "n. pl": "plural noun", "det": "determiner",
 }
-POS_PATTERN = re.compile(r"^(" + "|".join(re.escape(k) for k in sorted(POS, key=len, reverse=True)) + r")\.?\s+", re.I)
+POS_PATTERN = re.compile(r"^(" + "|".join(re.escape(k) for k in sorted(POS, key=len, reverse=True)) + r")\.?(?:\s+|$)", re.I)
 FORM_LABELS = {"p": "past tense", "d": "past participle", "i": "present participle",
                "3": "third person", "r": "comparative", "t": "superlative", "s": "plural"}
 
@@ -56,8 +56,10 @@ def fetch_sources():
 
 def parse_sections(raw):
     sections = []
-    # ECDICT uses literal backslash-n separators, including indented continuation lines.
-    for line in raw.replace("\\n", "\n").splitlines():
+    # Decode only known text separators, not arbitrary Python/Unicode escapes.
+    raw = re.sub(r"\\+[rn]", "\n", raw)
+    raw = re.sub(r"\\+t", " ", raw)
+    for line in raw.splitlines():
         if not line.strip():
             continue
         if line[0].isspace() and sections:
@@ -67,6 +69,8 @@ def parse_sections(raw):
         match = POS_PATTERN.match(line)
         part = POS[match.group(1).lower()] if match else "meaning"
         definition = line[match.end():] if match else line
+        if not definition.strip():
+            continue
         if not sections or sections[-1]["partOfSpeech"] != part:
             sections.append({"partOfSpeech": part, "senses": []})
         sections[-1]["senses"].append({"definition": definition, "examples": [], "synonyms": []})
@@ -110,6 +114,10 @@ def wordnet():
 def british_ipa(value):
     # Normalize ECDICT's legacy IPA glyphs; never derive UK IPA from US IPA.
     value = value.strip().strip("/[]")
+    # Backslashes in this source replace lost phonetic characters. Deleting them
+    # would invent a pronunciation; omit it unless a reviewed correction exists.
+    if "\\" in value:
+        return None
     for old, new in [("'", "ˈ"), (",", "ˌ"), (":", "ː"), ("ә", "ə"), ("ɡ", "g")]:
         value = value.replace(old, new)
     value = re.sub(r"i(?!ː)", "ɪ", value)

@@ -4,6 +4,8 @@ import Observation
 struct DictionaryDownloadRequest: Codable, Sendable {
     let token: UUID
     let pack: DictionaryPack
+    let command: PackCommand?
+    let sendToWatch: Bool?
 }
 
 @MainActor @Observable
@@ -16,11 +18,17 @@ final class DictionaryDownloads: NSObject, URLSessionDownloadDelegate {
     private(set) var errors: [DictionaryID: String] = [:]
     private(set) var catalogMessage: String?
     private(set) var isRefreshing = false
+    private(set) var sourceURL = DictionaryCatalog.remoteURL
+    var isDefaultSource: Bool { sourceURL == DictionaryCatalog.remoteURL }
+    var sourceDisplayName: String { isDefaultSource ? L10n.ui("Default source") : sourceURL.absoluteString }
+    var editableSourceAddress: String { isDefaultSource ? "" : (sourceURL.lastPathComponent == "manifest.json" ? sourceURL.deletingLastPathComponent().absoluteString : sourceURL.absoluteString) }
+    private(set) var isRestoring = true
+    var canChangeSource: Bool { !isRefreshing && !isRestoring && tasks.isEmpty && verifying.isEmpty }
     @ObservationIgnored private var tasks: [DictionaryID: URLSessionDownloadTask] = [:]
     @ObservationIgnored private var requests: [DictionaryID: DictionaryDownloadRequest] = [:]
     @ObservationIgnored private var processing = 0
     @ObservationIgnored private var eventsFinished = false
-    @ObservationIgnored private var backgroundCompletion: (() -> Void)?
+    @ObservationIgnored private var backgroundCompletions: [() -> Void] = []
     @ObservationIgnored private var started = false
     private static let latestKey = "latestDictionaryDownloadTokens.v2"
     private static let canceledKey = "canceledDictionaryDownloads.v2"
@@ -33,20 +41,29 @@ final class DictionaryDownloads: NSObject, URLSessionDownloadDelegate {
         queue.maxConcurrentOperationCount = 1
         return URLSession(configuration: configuration, delegate: self, delegateQueue: queue)
     }()
-    private static var cachedCatalog: URL { DictionaryLibrary.root.appending(path: "catalog.json") }
+    private static var cachedCatalog: URL { DictionaryLibrary.root.appending(path: "catalog-selection.json") }
 
     func start() {
         guard !started else { return }
         started = true
         do {
-            let catalog: DictionaryCatalog
-            if let data = try? Data(contentsOf: Self.cachedCatalog), let cached = try? DictionaryCatalog.decode(data) { catalog = cached }
-            else { catalog = try DictionaryCatalog.bundled() }
-            packs = catalog.packs
-        } catch { catalogMessage = error.localizedDescription }
+            let saved = (try? Data(contentsOf: Self.cachedCatalog)).flatMap { try? DictionaryCatalogSelection.decode($0) }
+            if let saved {
+                sourceURL = saved.effectiveSource
+                if saved.usesDefaultSource {
+                    let bundled = try DictionaryCatalog.bundled()
+                    // A former built-in host migrates to the new bundled source;
+                    // a deliberately saved custom source keeps its own URLs.
+                    packs = bundled.preferringCached(saved.source == sourceURL ? saved.catalog : nil).packs
+                } else { packs = saved.catalog.packs }
+            } else {
+                packs = try DictionaryCatalog.bundled().packs
+            }
+        } catch { catalogMessage = L10n.errorMessage(error) }
         _ = session
         recoverDownloads()
         Task {
+            defer { isRestoring = false }
             for task in await session.allTasks {
                 if let download = task as? URLSessionDownloadTask, let request = Self.request(for: task) {
                     if !accepts(request) || (requests[request.pack.id] != nil && requests[request.pack.id]?.token != request.token) {
@@ -68,26 +85,70 @@ final class DictionaryDownloads: NSObject, URLSessionDownloadDelegate {
         isRefreshing = true
         defer { isRefreshing = false }
         do {
-            var request = URLRequest(url: DictionaryCatalog.remoteURL)
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-            request.timeoutInterval = 30
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else { throw PackError.invalidCatalog }
-            guard http.statusCode == 200 else { throw PackError.http(http.statusCode) }
-            guard data.count <= 1_000_000 else { throw PackError.invalidCatalog }
-            let catalog = try DictionaryCatalog.decode(data)
-            try FileManager.default.createDirectory(at: DictionaryLibrary.root, withIntermediateDirectories: true)
-            try data.write(to: Self.cachedCatalog, options: .atomic)
-            packs = catalog.packs
-            catalogMessage = nil
-        } catch { catalogMessage = "Using the saved catalog. " + error.localizedDescription }
+            let catalog = try await fetchCatalog(at: sourceURL)
+            try save(catalog, source: sourceURL)
+        } catch { catalogMessage = "Using the saved catalog. " + L10n.errorMessage(error) }
     }
 
-    func download(_ pack: DictionaryPack) {
-        guard tasks[pack.id] == nil, !verifying.contains(pack.id) else { return }
-        do { try pack.validate() } catch { errors[pack.id] = error.localizedDescription; return }
+    func changeSource(to input: String) async throws {
+        guard canChangeSource else { throw SourceError.busy }
+        let source = try DictionaryDownloadSource.normalize(input)
+        isRefreshing = true
+        defer { isRefreshing = false }
+        let catalog = try await fetchCatalog(at: source)
+        try save(catalog, source: source)
+        errors = [:]
+    }
+
+    private func fetchCatalog(at source: URL) async throws -> DictionaryCatalog {
+        let client = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: nil)
+        defer { client.invalidateAndCancel() }
+        var request = URLRequest(url: source)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 30
+        let (bytes, response) = try await client.bytes(for: request)
+        guard let http = response as? HTTPURLResponse, let finalURL = response.url,
+              DictionaryDownloadSource.isSecureURL(finalURL) else { throw PackError.invalidCatalog }
+        guard http.statusCode == 200 else { throw PackError.http(http.statusCode) }
+        guard response.expectedContentLength <= 1_000_000 else { throw PackError.invalidCatalog }
+        var data = Data()
+        for try await byte in bytes {
+            guard data.count < 1_000_000 else { throw PackError.invalidCatalog }
+            data.append(byte)
+        }
+        let catalog = try DictionaryCatalog.decode(data, relativeTo: finalURL)
+        return source == DictionaryCatalog.remoteURL
+            ? try catalog.requiringCurrentFormat(minimum: DictionaryCatalog.bundled()) : catalog
+    }
+
+    private func save(_ catalog: DictionaryCatalog, source: URL) throws {
+        let selection = DictionaryCatalogSelection(source: source, catalog: catalog, isDefault: source == DictionaryCatalog.remoteURL)
+        try FileManager.default.createDirectory(at: DictionaryLibrary.root, withIntermediateDirectories: true)
+        try JSONEncoder().encode(selection).write(to: Self.cachedCatalog, options: .atomic)
+        sourceURL = source
+        packs = catalog.packs
+        catalogMessage = nil
+    }
+
+    func download(_ pack: DictionaryPack) async {
+        guard !isRefreshing, !isRestoring, packs.contains(pack), tasks[pack.id] == nil,
+              !verifying.contains(pack.id) else { return }
+        do { try pack.validate() } catch { errors[pack.id] = L10n.errorMessage(error); return }
         errors[pack.id] = nil
-        let request = DictionaryDownloadRequest(token: UUID(), pack: pack)
+        var command: PackCommand?
+        #if os(watchOS)
+        verifying.insert(pack.id)
+        do {
+            command = try await DictionaryLibrary.shared.beginLocalChange(pack.id, pack: pack)
+            await DictionarySync.shared.refreshLocal()
+        } catch {
+            verifying.remove(pack.id)
+            errors[pack.id] = L10n.errorMessage(error)
+            return
+        }
+        verifying.remove(pack.id)
+        #endif
+        let request = DictionaryDownloadRequest(token: UUID(), pack: pack, command: command, sendToWatch: false)
         var latest = UserDefaults.standard.dictionary(forKey: Self.latestKey) as? [String: String] ?? [:]
         latest[pack.id.rawValue] = request.token.uuidString
         UserDefaults.standard.set(latest, forKey: Self.latestKey)
@@ -104,6 +165,12 @@ final class DictionaryDownloads: NSObject, URLSessionDownloadDelegate {
             var canceled = UserDefaults.standard.stringArray(forKey: Self.canceledKey) ?? []
             canceled.append(request.token.uuidString)
             UserDefaults.standard.set(Array(canceled.suffix(100)), forKey: Self.canceledKey)
+            if let command = request.command {
+                Task {
+                    try? await DictionaryLibrary.shared.cancelLocalChange(command)
+                    await DictionarySync.shared.refreshLocal()
+                }
+            }
         }
         requests[id] = nil
         tasks[id]?.cancel()
@@ -112,16 +179,17 @@ final class DictionaryDownloads: NSObject, URLSessionDownloadDelegate {
     }
 
     func handleBackgroundEvents(_ completion: @escaping () -> Void) {
-        backgroundCompletion = completion
+        backgroundCompletions.append(completion)
         start()
         finishBackgroundEventsIfReady()
     }
 
     private func finishBackgroundEventsIfReady() {
-        guard eventsFinished, processing == 0, let completion = backgroundCompletion else { return }
-        backgroundCompletion = nil
+        guard eventsFinished, processing == 0, !backgroundCompletions.isEmpty else { return }
+        let completions = backgroundCompletions
+        backgroundCompletions = []
         eventsFinished = false
-        completion()
+        completions.forEach { $0() }
     }
 
     nonisolated private static func request(for task: URLSessionTask) -> DictionaryDownloadRequest? {
@@ -167,10 +235,20 @@ final class DictionaryDownloads: NSObject, URLSessionDownloadDelegate {
                 finishBackgroundEventsIfReady()
             }
             do {
-                try await DictionaryLibrary.shared.install(saved, pack: request.pack)
+                try await DictionaryLibrary.shared.install(saved, pack: request.pack, command: request.command)
                 await DictionarySync.shared.refreshLocal()
-                await DictionarySync.shared.send(request.pack)
-            } catch { errors[request.pack.id] = error.localizedDescription }
+                #if os(iOS)
+                // Restore the old download-and-send behavior for tasks created
+                // before iPhone gained standalone dictionary lookup.
+                if request.sendToWatch != false { await DictionarySync.shared.send(request.pack) }
+                #endif
+            } catch {
+                errors[request.pack.id] = L10n.errorMessage(error)
+                if let command = request.command {
+                    try? await DictionaryLibrary.shared.recordError(L10n.errorMessage(error), for: request.pack.id, command: command)
+                    await DictionarySync.shared.refreshLocal()
+                }
+            }
         }
     }
 
@@ -199,7 +277,7 @@ final class DictionaryDownloads: NSObject, URLSessionDownloadDelegate {
             try JSONEncoder().encode(request).write(to: saved.appendingPathExtension("json"), options: .atomic)
             DispatchQueue.main.async { self.processDownloaded(saved, request: request) }
         } catch {
-            let message = error.localizedDescription
+            let message = L10n.errorMessage(error)
             DispatchQueue.main.async { self.fail(request, message: message) }
         }
     }
@@ -211,11 +289,17 @@ final class DictionaryDownloads: NSObject, URLSessionDownloadDelegate {
         progress[request.pack.id] = nil
         tasks[request.pack.id] = nil
         requests[request.pack.id] = nil
+        if let command = request.command {
+            Task {
+                try? await DictionaryLibrary.shared.recordError(message, for: request.pack.id, command: command)
+                await DictionarySync.shared.refreshLocal()
+            }
+        }
     }
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error, let request = Self.request(for: task), (error as NSError).code != NSURLErrorCancelled else { return }
-        let message = error.localizedDescription
+        let message = L10n.errorMessage(error)
         DispatchQueue.main.async { self.fail(request, message: message) }
     }
 
@@ -231,6 +315,6 @@ final class DictionaryDownloads: NSObject, URLSessionDownloadDelegate {
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask,
                                willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
                                completionHandler: @escaping (URLRequest?) -> Void) {
-        completionHandler(request.url?.scheme == "https" && request.url?.host == "fastcdn.candyrect.com" ? request : nil)
+        completionHandler(request.url.map(DictionaryDownloadSource.isSecureURL) == true ? request : nil)
     }
 }

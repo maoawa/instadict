@@ -54,7 +54,7 @@ final class LookupModel {
             } catch {
                 guard !Task.isCancelled, requestID == request else { return }
                 if case PackError.missing(let missing) = error { state = .needsPack(missing) }
-                else { state = .failed(error.localizedDescription) }
+                else { state = .failed(L10n.errorMessage(error)) }
             }
         }
     }

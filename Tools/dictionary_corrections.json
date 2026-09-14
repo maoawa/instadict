@@ -1,0 +1,15 @@
+{
+  "personalise": {
+    "reason": "ECDICT's phonetic field contains backslashes in place of a vowel. Reviewed British pronunciation for the spelling variant of personalize.",
+    "phonetic": "ˈpɜːsənəlaɪz"
+  },
+  "hentai": {
+    "reason": "Replace the malformed ECDICT commentary with a concise, locally authored dictionary definition.",
+    "definition": "n. a genre of Japanese manga and animation with sexually explicit content"
+  },
+  "multimeter": {
+    "reason": "ECDICT has a Chinese translation but no English definition, and incorrectly identifies multimete as its lemma. English definition locally authored from the instrument's standard meaning.",
+    "definition": "n. an instrument for measuring electrical quantities such as voltage, current, and resistance",
+    "exchange": "s:multimeters"
+  }
+}

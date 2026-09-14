@@ -1,0 +1,113 @@
+{
+  "blocks-128": {
+    "random": {
+      "samples": 4608,
+      "medianMS": 0.187917,
+      "p95MS": 0.209917,
+      "p99MS": 0.261291,
+      "maxMS": 2.785416
+    },
+    "repeated": {
+      "samples": 4608,
+      "medianMS": 0.1948955,
+      "p95MS": 0.233917,
+      "p99MS": 0.351375,
+      "maxMS": 8.592041
+    },
+    "aliases": {
+      "samples": 576,
+      "medianMS": 0.220042,
+      "p95MS": 0.253167,
+      "p99MS": 0.369584,
+      "maxMS": 0.589584
+    },
+    "misses": {
+      "samples": 288,
+      "medianMS": 0.1842085,
+      "p95MS": 0.207084,
+      "p99MS": 0.237125,
+      "maxMS": 0.352833
+    },
+    "typos": {
+      "samples": 18,
+      "medianMS": 0.8657715,
+      "p95MS": 1.168583,
+      "p99MS": 1.168583,
+      "maxMS": 1.168583
+    }
+  },
+  "per-entry": {
+    "random": {
+      "samples": 4608,
+      "medianMS": 0.1672295,
+      "p95MS": 0.207958,
+      "p99MS": 0.436375,
+      "maxMS": 3.721
+    },
+    "repeated": {
+      "samples": 4608,
+      "medianMS": 0.17525,
+      "p95MS": 0.19825,
+      "p99MS": 0.229667,
+      "maxMS": 2.409375
+    },
+    "aliases": {
+      "samples": 576,
+      "medianMS": 0.19647900000000001,
+      "p95MS": 0.293916,
+      "p99MS": 0.48925,
+      "maxMS": 2.246833
+    },
+    "misses": {
+      "samples": 288,
+      "medianMS": 0.1844375,
+      "p95MS": 0.201166,
+      "p99MS": 0.219208,
+      "maxMS": 0.238583
+    },
+    "typos": {
+      "samples": 18,
+      "medianMS": 0.98575,
+      "p95MS": 5.333458,
+      "p99MS": 5.333458,
+      "maxMS": 5.333458
+    }
+  },
+  "uncompressed": {
+    "random": {
+      "samples": 4608,
+      "medianMS": 0.164958,
+      "p95MS": 0.189542,
+      "p99MS": 0.254458,
+      "maxMS": 4.345125
+    },
+    "repeated": {
+      "samples": 4608,
+      "medianMS": 0.174917,
+      "p95MS": 0.221708,
+      "p99MS": 0.340292,
+      "maxMS": 1.460625
+    },
+    "aliases": {
+      "samples": 576,
+      "medianMS": 0.194708,
+      "p95MS": 0.228667,
+      "p99MS": 0.327125,
+      "maxMS": 0.404334
+    },
+    "misses": {
+      "samples": 288,
+      "medianMS": 0.18635400000000002,
+      "p95MS": 0.213584,
+      "p99MS": 0.25475,
+      "maxMS": 0.26875
+    },
+    "typos": {
+      "samples": 18,
+      "medianMS": 0.972771,
+      "p95MS": 1.073208,
+      "p99MS": 1.073208,
+      "maxMS": 1.073208
+    }
+  }
+}

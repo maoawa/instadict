@@ -9,10 +9,12 @@ import SwiftUI
 
 @main
 struct InstaDict_Watch_AppApp: App {
+    @State private var languageSettings = LanguageSettings.shared
     @WKApplicationDelegateAdaptor(WatchAppDelegate.self) private var delegate
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(\.locale, languageSettings.language.locale)
         }
     }
 }

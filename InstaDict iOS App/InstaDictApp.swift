@@ -3,10 +3,12 @@ import UIKit
 
 @main
 struct InstaDictApp: App {
+    @State private var languageSettings = LanguageSettings.shared
     @UIApplicationDelegateAdaptor(PhoneAppDelegate.self) private var delegate
     var body: some Scene {
         WindowGroup {
-            DictionaryManagerView()
+            PhoneLookupView()
+                .environment(\.locale, languageSettings.language.locale)
                 .environment(DictionaryDownloads.shared)
                 .environment(DictionarySync.shared)
                 .tint(Color(uiColor: UIColor { traits in
@@ -23,6 +25,14 @@ struct InstaDictApp: App {
 }
 
 final class PhoneAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        // A WatchConnectivity wake-up need not create a SwiftUI view.
+        DictionarySync.shared.start()
+        DictionaryDownloads.shared.start()
+        return true
+    }
+
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
                      completionHandler: @escaping () -> Void) {
         guard identifier == DictionaryDownloads.sessionIdentifier else { completionHandler(); return }

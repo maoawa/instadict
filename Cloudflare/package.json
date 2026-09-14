@@ -1,0 +1,13 @@
+{
+  "name": "instadict-distribution",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node distribute.mjs check",
+    "deploy": "node distribute.mjs upload",
+    "verify": "node distribute.mjs verify"
+  },
+  "devDependencies": {
+    "wrangler": "4.131.2"
+  }
+}

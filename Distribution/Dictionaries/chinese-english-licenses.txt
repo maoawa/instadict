@@ -2,7 +2,8 @@ Chinese–English: CC-CEDICT, community contributors, published by MDBG.
 https://www.mdbg.net/chinese/dictionary?page=cc-cedict
 CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/
 
-Modifications: grouped simplified headwords and senses, retained numbered pinyin, indexed traditional spellings, and compiled a compressed SQLite database. This derived dictionary pack is licensed under CC BY-SA 4.0. The unchanged source snapshot is provided alongside it as cc-cedict-source.txt.gz.
+Modifications: grouped simplified headwords and senses, retained numbered pinyin, indexed traditional spellings, and compiled a SQLite database with lossless zlib compression in blocks of up to 128 entries. This derived dictionary pack is licensed under CC BY-SA 4.0. Original source: https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz
+The cached source snapshot SHA-256 is recorded in the pack provenance.
 
 # CC-CEDICT
 # Community maintained free Chinese-English dictionary.

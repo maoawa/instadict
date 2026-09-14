@@ -40,25 +40,41 @@ struct DictionaryStore: Sendable {
         }
         defer { sqlite3_close(database) }
         sqlite3_exec(database, "PRAGMA cache_size = -256", nil, nil, nil)
+        let schema = try withStatement("PRAGMA user_version", [], database: database) { statement in
+            guard try step(statement) else { throw StoreError.unreadableDatabase }
+            return Int(sqlite3_column_int(statement, 0))
+        }
+        guard DictionarySchema.supported.contains(schema) else { throw StoreError.unreadableDatabase }
 
-        if let entry = try readEntry(query, database: database) {
+        if let entry = try readEntry(query, schema: schema, database: database) {
             return LookupResult(query: query, entry: entry, suggestions: [])
         }
         let base = try withStatement("SELECT word FROM aliases WHERE alias = ? LIMIT 1", [query], database: database) { statement in
             try step(statement) ? string(statement, 0) : nil
         }
-        if let base, let entry = try readEntry(base, database: database) {
+        if let base, let entry = try readEntry(base, schema: schema, database: database) {
             return LookupResult(query: query, entry: entry, suggestions: [])
         }
         return LookupResult(query: query, entry: nil, suggestions: try suggestions(for: query, database: database))
     }
 
-    private func readEntry(_ word: String, database: OpaquePointer) throws -> DictionaryEntry? {
-        try withStatement("SELECT payload, payload_size FROM entries WHERE word = ?", [word], database: database) { statement in
+    private func readEntry(_ word: String, schema: Int, database: OpaquePointer) throws -> DictionaryEntry? {
+        let sql = schema == 3
+            ? "SELECT b.payload,b.payload_size,e.byte_offset,e.payload_size FROM entries e LEFT JOIN blocks b ON b.id=e.block_id WHERE e.word=?"
+            : "SELECT payload,payload_size,0,payload_size FROM entries WHERE word=?"
+        return try withStatement(sql, [word], database: database) { statement in
             guard try step(statement) else { return nil }
-            let size = Int(sqlite3_column_int(statement, 1))
-            // Validate lengths before allocation, even though the pack is read-only.
-            guard (1...2_000_000).contains(size), let source = sqlite3_column_blob(statement, 0) else {
+            // Read 64-bit SQLite integers before converting to arm64_32 Int;
+            // otherwise malformed large offsets could wrap into valid ranges.
+            guard sqlite3_column_type(statement, 0) == SQLITE_BLOB,
+                  (1...3).allSatisfy({ sqlite3_column_type(statement, Int32($0)) == SQLITE_INTEGER }),
+                  let size = Int(exactly: sqlite3_column_int64(statement, 1)),
+                  let offset = Int(exactly: sqlite3_column_int64(statement, 2)),
+                  let entrySize = Int(exactly: sqlite3_column_int64(statement, 3)),
+                  (1...DictionarySchema.maximumPayloadBytes).contains(size),
+                  offset >= 0, offset <= size, entrySize > 0, entrySize <= size - offset,
+                  sqlite3_column_bytes(statement, 0) > 0,
+                  let source = sqlite3_column_blob(statement, 0) else {
                 throw StoreError.invalidEntry
             }
             var data = Data(count: size)
@@ -67,11 +83,15 @@ struct DictionaryStore: Sendable {
                 uncompress(destination.bindMemory(to: Bytef.self).baseAddress, &outputSize,
                            source.assumingMemoryBound(to: Bytef.self), uLong(sqlite3_column_bytes(statement, 0)))
             }
-            guard status == Z_OK, outputSize == size,
-                  let entry = try? JSONDecoder().decode(DictionaryEntry.self, from: data) else {
+            guard status == Z_OK, outputSize == size else { throw StoreError.invalidEntry }
+            // Only this entry is JSON-decoded. The database stays compressed on
+            // disk; the temporary inflated block is released after the lookup.
+            let entryData = schema == 3 ? data.subdata(in: offset..<(offset + entrySize)) : data
+            guard let entry = try? JSONDecoder().decode(DictionaryEntry.self, from: entryData),
+                  entry.word == word else {
                 throw StoreError.invalidEntry
             }
-            return entry
+            return entry.formattedForDisplay
         }
     }
 

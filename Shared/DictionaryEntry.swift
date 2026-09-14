@@ -1,5 +1,10 @@
 import Foundation
 
+enum DictionarySchema {
+    static let supported = 2...3
+    static let maximumPayloadBytes = 2_000_000
+}
+
 enum DictionaryLanguage: String, Sendable {
     case english
     case chinese

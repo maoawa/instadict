@@ -4,7 +4,7 @@ English definitions, examples and synonyms: WordNet 3.0, Princeton University.
 Additional English definitions, Chinese translations, word forms and primarily British phonetics: ECDICT, Linwei.
 American IPA: ipa-dict / cmudict-ipa.
 
-Modified by selecting records, parsing definitions, normalizing legacy IPA and compiling separate SQLite packs. ECDICT phonetics are primarily British, not individually accent-verified. Coverage varies and some language is dated.
+Modified by selecting records, cleaning escaped line breaks, normalizing legacy IPA, applying reviewed local corrections (personalise pronunciation, hentai definition, multimeter definition and word forms), and compiling separate SQLite packs with lossless zlib compression in blocks of up to 128 entries. The replacement definitions are locally authored. Malformed phonetics without a reviewed correction are omitted. ECDICT phonetics are primarily British, not individually accent-verified. Coverage varies and some language is dated.
 
 WordNet Release 3.0
 
