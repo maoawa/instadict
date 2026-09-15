@@ -18,15 +18,19 @@ final class LookupModel {
     var language: DictionaryLanguage { dictionary == .englishChinese ? .chinese : .english }
     var canSwitchLanguage: Bool { !lastQuery.isEmpty && !LookupQuery.isChinese(lastQuery) }
     private let library: DictionaryLibrary
+    private let preferences: LookupPreferences
     private var lookupTask: Task<Void, Never>?
     private var requestID = UUID()
 
-    init(library: DictionaryLibrary = .shared) { self.library = library }
+    init(library: DictionaryLibrary = .shared, preferences: LookupPreferences? = nil) {
+        self.library = library
+        self.preferences = preferences ?? .shared
+    }
 
     func lookUp(_ input: String) {
         let query = LookupQuery.normalize(input)
         guard !query.isEmpty else { return }
-        search(query, in: LookupQuery.isChinese(query) ? .chineseEnglish : .englishEnglish)
+        search(query, in: LookupQuery.isChinese(query) ? .chineseEnglish : preferences.englishDictionary.dictionaryID)
     }
 
     func switchLanguage() {

@@ -265,11 +265,10 @@ final class DictionaryDownloads: NSObject, URLSessionDownloadDelegate {
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         guard let request = Self.request(for: downloadTask) else { return }
         let status = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else {
-            DispatchQueue.main.async { self.fail(request, message: PackError.http(status).localizedDescription) }
-            return
-        }
         do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: location.path)
+            let size = (attributes[.size] as? NSNumber)?.int64Value ?? -1
+            try request.pack.validateDownload(statusCode: status, fileByteCount: size)
             let folder = DictionaryLibrary.root.appending(path: "Downloads")
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let saved = folder.appending(path: request.token.uuidString + ".sqlite")

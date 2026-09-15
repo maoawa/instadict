@@ -1,21 +1,21 @@
 import SwiftUI
 
 enum WatchSettingsAccess: String, CaseIterable, Identifiable {
-    case swipe, button
+    case button, swipe
     var id: String { rawValue }
-    var title: String { self == .swipe ? "Swipe left" : "Lower-left button" }
+    var title: String { self == .swipe ? "Swipe left" : "Upper-left button" }
 }
 
 struct WatchSettingsView: View {
-    @AppStorage("watchSettingsAccess") private var access = WatchSettingsAccess.swipe
+    @AppStorage("watchSettingsAccess") private var access = WatchSettingsAccess.button
     @Environment(\.dismiss) private var dismiss
     @State private var showingTutorial = false
 
     var body: some View {
         NavigationStack {
             List {
-                Section { InterfaceLanguagePicker() }
                 Section { PronunciationOrderPicker() }
+                Section { LookupPreferencesPicker() }
                 NavigationLink {
                     WatchDictionariesView()
                 } label: { Label("Manage dictionaries", systemImage: "books.vertical") }
@@ -28,6 +28,10 @@ struct WatchSettingsView: View {
                 } footer: {
                     Text("Choose how to open settings from a definition.")
                 }
+                Section { InterfaceLanguagePicker() }
+                Section { FeedbackButton() } footer: {
+                    Text(verbatim: "instadict@candyrect.com")
+                }
                 Section {
                     Button("Show tutorial again", systemImage: "questionmark.circle") { showingTutorial = true }
                 }
@@ -36,6 +40,7 @@ struct WatchSettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done", systemImage: "xmark") { dismiss() }
+                        .instaDictCircleButton()
                 }
             }
         }
@@ -59,7 +64,7 @@ struct WatchDictionariesView: View {
                             if downloads.verifying.contains(pack.id) {
                                 Text("Verifying…").font(.caption2)
                             } else if let fraction = downloads.progress[pack.id] {
-                                ProgressView(value: fraction)
+                                WatchDownloadProgress(fraction: fraction)
                             } else {
                                 Text(sync.local.installed.contains { $0.pack.hasSameContent(as: pack) }
                                      ? L10n.ui("Installed") : L10n.fileSize(pack.byteCount))
@@ -78,7 +83,6 @@ struct WatchDictionariesView: View {
                 Task { await downloads.refreshCatalog() }
             }
             .disabled(downloads.isRefreshing)
-            NavigationLink("Download source") { WatchDownloadSourceView() }
         }
         .navigationTitle("Dictionaries")
         .task {
@@ -110,7 +114,10 @@ private struct WatchDictionaryDetailView: View {
                 if downloads.verifying.contains(pack.id) || sync.busy.contains(pack.id) {
                     ProgressView("Installing…")
                 } else if let fraction = downloads.progress[pack.id] {
-                    ProgressView(value: fraction) { Text(L10n.ui("Downloading · %@%%", L10n.number(Int(fraction * 100)))) }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(L10n.ui("Downloading · %@%%", L10n.number(Int(fraction * 100))))
+                        WatchDownloadProgress(fraction: fraction)
+                    }
                     Button("Cancel download", role: .cancel) { downloads.cancel(pack.id) }
                 } else if isCurrent {
                     Label("Installed on Watch", systemImage: "checkmark.circle")
@@ -177,5 +184,17 @@ private struct WatchDownloadSourceView: View {
                 message = "Source saved."
             } catch { message = L10n.errorMessage(error) }
         }
+    }
+}
+
+/// watchOS ignores controlSize for linear bars. Scale just the native bar;
+/// keep its surrounding text and its accessibility progress value unchanged.
+struct WatchDownloadProgress: View {
+    let fraction: Double
+    var body: some View {
+        ProgressView(value: fraction)
+            .progressViewStyle(.linear)
+            .scaleEffect(x: 1, y: 0.35)
+            .frame(height: 6)
     }
 }

@@ -55,6 +55,14 @@ struct DictionaryPack: Codable, Identifiable, Equatable, Sendable {
               url.pathExtension == "sqlite" else { throw PackError.invalidCatalog }
     }
 
+    /// URLSession reassembles resumed range downloads before delivering the file.
+    /// A 206 is successful only when that delivered file has the full catalog size;
+    /// installation still verifies its SHA-256 and SQLite contents.
+    func validateDownload(statusCode: Int, fileByteCount: Int64) throws {
+        guard statusCode == 200 || statusCode == 206 else { throw PackError.http(statusCode) }
+        guard fileByteCount == byteCount else { throw PackError.sizeMismatch }
+    }
+
     func resolvingURL(relativeTo base: URL) -> Self {
         Self(id: id, version: version, schemaVersion: schemaVersion, entryCount: entryCount,
              byteCount: byteCount, sha256: sha256,

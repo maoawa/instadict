@@ -4,6 +4,7 @@ struct ContentView: View {
     @AppStorage("hasCompletedIntroduction") private var hasCompletedIntroduction = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var model = LookupModel()
+    @State private var preferences = LookupPreferences.shared
     @State private var sync = DictionarySync.shared
     @State private var input = WordInputPresenter()
     @State private var hasStarted = false
@@ -11,7 +12,7 @@ struct ContentView: View {
     @State private var inputRequest: UUID?
     @State private var showingSettings = false
     @State private var promptAfterSettings = false
-    @AppStorage("watchSettingsAccess") private var settingsAccess = WatchSettingsAccess.swipe
+    @AppStorage("watchSettingsAccess") private var settingsAccess = WatchSettingsAccess.button
 
     private var isDefinition: Bool {
         if case .definition = model.state { return true }
@@ -37,29 +38,22 @@ struct ContentView: View {
             }
             .containerBackground(.black, for: .navigation)
             .toolbar {
-                if !isDefinition || sync.local.installed.isEmpty {
+                if !isDefinition || sync.local.installed.isEmpty || settingsAccess == .button {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Settings", systemImage: "gearshape") { showingSettings = true }
-                            .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.accentColor)
+                            .instaDictCircleButton()
                     }
                 }
                 if hasCompletedIntroduction, !sync.local.installed.isEmpty, !model.lastQuery.isEmpty {
                     ToolbarItemGroup(placement: .bottomBar) {
-                        if isDefinition, settingsAccess == .button {
-                            Button("Settings", systemImage: "gearshape") { showingSettings = true }
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.accentColor)
-                                .foregroundStyle(.black)
-                        }
                         Spacer()
                         Button("Look up a new word", systemImage: "square.and.pencil", action: requestInput)
                             .labelStyle(.iconOnly)
-                            .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.accentColor)
-                            .foregroundStyle(.black)
+                            .instaDictCircleButton()
                             .accessibilityIdentifier("newWord")
                     }
                 }
-                if hasCompletedIntroduction, !sync.local.installed.isEmpty, model.canSwitchLanguage {
+                if hasCompletedIntroduction, !sync.local.installed.isEmpty, preferences.showsLanguageSwitch, model.canSwitchLanguage {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             model.switchLanguage()
@@ -68,7 +62,7 @@ struct ContentView: View {
                                 .font(.system(.body, design: .rounded, weight: .semibold))
                                 .foregroundStyle(.black)
                         }
-                        .tint(.accentColor)
+                        .instaDictCircleButton()
                         .accessibilityLabel(LocalizedStringKey(model.language == .english ? "Look up in English–Chinese" : "Show English definitions"))
                         .accessibilityIdentifier("dictionaryLanguage")
                     }
@@ -108,11 +102,21 @@ struct ContentView: View {
             guard inputRequest != nil else { return }
             await input.present { model.lookUp($0) }
         }
+        .onOpenURL { url in
+            guard url.scheme == "instadict", url.host == "lookup", hasCompletedIntroduction else { return }
+            if showingSettings {
+                promptAfterSettings = true
+                showingSettings = false
+            } else {
+                requestInput()
+            }
+        }
         .onChange(of: sync.local.installed) { previous, current in
             model.reloadCurrent()
             if hasStarted, previous.isEmpty, !current.isEmpty, model.lastQuery.isEmpty, hasCompletedIntroduction { requestInput() }
         }
         .onChange(of: scenePhase) { _, phase in
+            if phase == .active { LanguageSettings.shared.refreshDeviceLanguage() }
             if phase == .background {
                 shouldPromptOnActivation = true
             } else if phase == .active, shouldPromptOnActivation {

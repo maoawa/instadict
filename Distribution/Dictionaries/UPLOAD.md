@@ -19,7 +19,7 @@ For the optional R2 mirror, see `Cloudflare/README.md` for validation and publis
 
 Upload the packs and licenses first, then `manifest.json` last.
 This release fixes malformed source text and missing entries, and uses lossless
-block compression. Install app version 0.5 build 8 (iPhone and Watch) before testing
+block compression. Install app version 0.5 build 10 (iPhone and Watch) before testing
 these schema-3 packs. They remain compressed on the Watch; no whole-pack expansion
 is needed during installation. Pinyin tone marks and example highlighting are included.
 During internal testing, this folder keeps only the current manifest's three packs.

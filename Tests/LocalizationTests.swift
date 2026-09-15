@@ -20,19 +20,35 @@ func allChineseDeviceVariantsUseSimplifiedChinese(_ identifier: String) {
     #expect(InterfaceLanguage.allCases.map(\.rawValue) == ["en", "zh-Hans"])
 }
 
-@Test @MainActor func interfaceLanguageIsInitializedOnceAndPersistsExplicitChoices() throws {
+@Test @MainActor func systemLanguageFollowsDeviceAndExplicitChoicesPersist() throws {
     let name = "InstaDict.LocalizationTests." + UUID().uuidString
     let defaults = try #require(UserDefaults(suiteName: name))
     defer { defaults.removePersistentDomain(forName: name) }
     let first = LanguageSettings(defaults: defaults, preferredLanguages: ["zh-HK"])
+    #expect(first.selection == .system)
     #expect(first.language == .simplifiedChinese)
-    #expect(defaults.string(forKey: LanguageSettings.preferenceKey) == "zh-Hans")
-    let reopened = LanguageSettings(defaults: defaults, preferredLanguages: ["en-SG"])
+    first.refreshDeviceLanguage(preferredLanguages: ["en-SG"])
+    #expect(first.language == .english)
+    first.selection = .simplifiedChinese
+    first.refreshDeviceLanguage(preferredLanguages: ["fr-FR"])
+    #expect(first.language == .simplifiedChinese)
+    let reopened = LanguageSettings(defaults: defaults, preferredLanguages: ["en-GB"])
+    #expect(reopened.selection == .simplifiedChinese)
     #expect(reopened.language == .simplifiedChinese)
-    reopened.language = .english
-    #expect(LanguageSettings(defaults: defaults, preferredLanguages: ["zh-TW"]).language == .english)
-    defaults.set("invalid", forKey: LanguageSettings.preferenceKey)
-    #expect(LanguageSettings(defaults: defaults, preferredLanguages: ["fr-FR"]).language == .english)
+    reopened.selection = .system
+    #expect(reopened.language == .english)
+    #expect(LanguageSettings(defaults: defaults, preferredLanguages: ["zh-TW"]).language == .simplifiedChinese)
+}
+
+@Test @MainActor func oldLanguageChoicesSurvivePickerMigration() throws {
+    let name = "InstaDict.LanguageMigration." + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    defaults.set("en", forKey: LanguageSettings.preferenceKey)
+    let migrated = LanguageSettings(defaults: defaults, preferredLanguages: ["zh-HK"])
+    #expect(migrated.selection == .english)
+    #expect(migrated.language == .english)
+    #expect(defaults.string(forKey: LanguageSettings.selectionKey) == "en")
 }
 
 @Test func localizedGrammarRegionsAndDynamicMessages() {

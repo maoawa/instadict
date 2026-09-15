@@ -5,85 +5,82 @@ struct PhoneLookupView: View {
     @Environment(DictionaryDownloads.self) private var downloads
     @Environment(\.scenePhase) private var scenePhase
     @State private var model = LookupModel()
+    @State private var preferences = LookupPreferences.shared
+    @AppStorage("hasCompletedIntroduction") private var hasCompletedIntroduction = false
+    @State private var showingIntroduction = false
     @State private var word = ""
     @State private var showingSettings = false
     @State private var shouldPromptOnActivation = false
     @State private var promptAfterSettings = false
-    @FocusState private var inputFocused: Bool
+    @State private var searchPresented = false
+    @State private var hasStarted = false
 
     var body: some View {
         NavigationStack {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(.systemBackground))
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("Enter a word", text: $word)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .submitLabel(.search)
-                            .focused($inputFocused)
-                            .onSubmit(search)
-                            .accessibilityIdentifier("wordInput")
-                        if !word.isEmpty {
-                            Button("Clear word", systemImage: "xmark.circle.fill") {
-                                word = ""
-                                inputFocused = true
-                            }
-                            .labelStyle(.iconOnly).foregroundStyle(.tint)
-                        }
-                        Button("Look up", systemImage: "arrow.right.circle.fill", action: search)
-                            .labelStyle(.iconOnly)
-                            .disabled(LookupQuery.normalize(word).isEmpty)
-                    }
-                    .padding(14)
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
-                    .padding(.horizontal, 16).padding(.bottom, 12)
-                    .background(Color(.systemBackground))
-                }
                 .navigationTitle("InstaDict")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Settings", systemImage: "gearshape") {
-                            inputFocused = false
+                            searchPresented = false
                             showingSettings = true
                         }
-                        .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.accentColor)
+                        .instaDictCircleButton()
                     }
-                    if model.canSwitchLanguage {
+                    if preferences.showsLanguageSwitch, model.canSwitchLanguage {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button(LocalizedStringKey(model.language == .english ? "中" : "EN")) {
-                                inputFocused = false
+                                searchPresented = false
                                 model.switchLanguage()
                             }
-                            .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.accentColor)
+                            .instaDictCircleButton()
                             .accessibilityLabel(LocalizedStringKey(model.language == .english ? "Look up in English–Chinese" : "Show English definitions"))
                         }
                     }
-                    if !inputFocused, !model.lastQuery.isEmpty {
-                        ToolbarItemGroup(placement: .bottomBar) {
-                            Spacer()
-                            Button("Look up a new word", systemImage: "square.and.pencil", action: newWord)
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.accentColor)
-                                .accessibilityIdentifier("newWord")
-                        }
+                    if #available(iOS 26.0, *) {
+                        DefaultToolbarItem(kind: .search, placement: .bottomBar)
                     }
                 }
         }
+        .searchable(text: $word, isPresented: $searchPresented, prompt: "Enter a word")
+        .searchDictationBehavior(.inline(activation: .onSelect))
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
+        .onSubmit(of: .search, search)
         .sheet(isPresented: $showingSettings, onDismiss: {
-            if promptAfterSettings {
+            if promptAfterSettings, hasCompletedIntroduction {
                 promptAfterSettings = false
-                inputFocused = true
+                searchPresented = true
             }
         }) { PhoneSettingsView() }
+        .fullScreenCover(isPresented: $showingIntroduction, onDismiss: {
+            if hasCompletedIntroduction { searchPresented = true }
+        }) {
+            NavigationStack {
+                IntroductionView(onBegin: {
+                    hasCompletedIntroduction = true
+                    showingIntroduction = false
+                })
+            }
+            .interactiveDismissDisabled()
+        }
         .task {
+            guard !hasStarted else { return }
+            hasStarted = true
             // Focus as the first screen appears; library loading must not delay
             // text entry. A missing dictionary is explained after submission.
             await Task.yield()
             #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--reset-introduction") {
+                hasCompletedIntroduction = false
+            }
+            if ProcessInfo.processInfo.arguments.contains("--preview-settings") {
+                showingSettings = true
+                return
+            }
             if let index = ProcessInfo.processInfo.arguments.firstIndex(of: "--preview-word"),
                ProcessInfo.processInfo.arguments.indices.contains(index + 1) {
                 sync.start()
@@ -93,21 +90,24 @@ struct PhoneLookupView: View {
                 return
             }
             #endif
-            inputFocused = true
+            showingIntroduction = !hasCompletedIntroduction
+            searchPresented = hasCompletedIntroduction
             sync.start()
             downloads.start()
             await sync.refreshLocal()
         }
         .onChange(of: sync.local.installed) { _, _ in model.reloadCurrent() }
         .onChange(of: scenePhase) { _, phase in
+            if phase == .active { LanguageSettings.shared.refreshDeviceLanguage() }
             if phase == .background {
                 shouldPromptOnActivation = true
+                searchPresented = false
             } else if phase == .active, shouldPromptOnActivation {
                 shouldPromptOnActivation = false
                 if showingSettings {
                     promptAfterSettings = true
                     showingSettings = false
-                } else { inputFocused = true }
+                } else if hasCompletedIntroduction, !showingIntroduction { searchPresented = true }
             }
         }
     }
@@ -140,7 +140,7 @@ struct PhoneLookupView: View {
                 Text("Add this dictionary in Settings to look up words on your iPhone.")
                     .foregroundStyle(.secondary)
                 Button("Manage dictionaries", systemImage: "books.vertical") {
-                    inputFocused = false
+                    searchPresented = false
                     showingSettings = true
                 }.buttonStyle(.borderedProminent)
             }.multilineTextAlignment(.center).padding(24)
@@ -164,13 +164,13 @@ struct PhoneLookupView: View {
 
     private func lookUp(_ input: String) {
         word = input
-        inputFocused = false
+        searchPresented = false
         model.lookUp(input)
     }
 
     private func newWord() {
         word = ""
-        inputFocused = true
+        searchPresented = true
     }
 }
 
@@ -181,18 +181,13 @@ private struct PhoneSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section { InterfaceLanguagePicker() }
                 Section { PronunciationOrderPicker() }
+                Section { LookupPreferencesPicker() }
                 NavigationLink {
                     DictionaryManagerView()
                 } label: { Label("Manage dictionaries", systemImage: "books.vertical") }
-                NavigationLink {
-                    DictionaryDownloadSourceView()
-                } label: { Label("Download source", systemImage: "network") }
-                Section {
-                    Text("Open InstaDict and start typing. Dictionaries downloaded on this iPhone are available offline.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
+                Section { InterfaceLanguagePicker() }
+                Section { FeedbackButton() }
                 Section {
                     Button("Show tutorial again", systemImage: "questionmark.circle") { showingTutorial = true }
                 }
@@ -205,5 +200,10 @@ private struct PhoneSettingsView: View {
             }
         }
         .sheet(isPresented: $showingTutorial) { TutorialSheet() }
+        #if DEBUG
+        .task {
+            if ProcessInfo.processInfo.arguments.contains("--preview-tutorial") { showingTutorial = true }
+        }
+        #endif
     }
 }

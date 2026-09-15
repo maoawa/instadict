@@ -62,8 +62,8 @@ American IPA revisions are pinned in `Tools/dictionary_sources.py`. CC-CEDICT's
 cached dated snapshot and SHA-256 are recorded in the Chinese pack's provenance.
 For a future CC-CEDICT refresh, replace its cached source deliberately, then use a
 new pack version. The builder emits relative filenames by default; `--base-url` can
-optionally produce absolute URLs. **Settings → Download source** on iPhone (under
-**Manage dictionaries** on Watch) accepts a bare website/folder such as
+optionally produce absolute URLs. Build 10 hides the **Download source** option on
+both iPhone and Watch for production. The underlying source support accepts a bare website/folder such as
 `example.com/dictionaries`, or an HTTPS catalog URL. HTTPS and `manifest.json` are
 added automatically for folder input. It checks the catalog before saving, persists the source and catalog
 together, and keeps the previous source if validation fails. Relative SQLite URLs
@@ -82,7 +82,7 @@ Version `2026.09.14` corrects `personalise` phonetics, replaces the malformed
 corrupt phonetics are omitted. Literal source line-break escapes are cleaned and
 empty senses discarded. The expanded English–Chinese pack includes translations
 previously excluded by the English-content selection rule.
-The internal TestFlight build number is now 8 (app version 0.5). Install this
+The internal TestFlight build number is now 11 (app version 0.5). Install this
 updated iPhone/Watch app before testing the new packs. Filenames retain
 `2026.09.14` as requested; replace the CDN files and manifest together, clear stale
 CDN copies, then refresh the iPhone catalog and download/send the packs again.
@@ -100,6 +100,8 @@ cached schema-2 catalog. Custom catalogs are kept separate from the bundled cata
   pack can be sent when missing on Watch. Once installed there, **Send to Watch
   again** lives in the card's upper-right menu, alongside removal options.
 - Cancel/retry, catalog refresh and update downloads.
+- HTTP 200 and completed HTTP 206 range downloads are accepted. A resumed transfer
+  still needs the full catalog byte count, SHA-256 and SQLite validation before install.
 - Background URLSession downloads; task restoration and recovery of completed
   downloads awaiting verification after process interruption.
 - Verification of file length, SHA-256, SQLite integrity, schema, pack identity,
@@ -110,28 +112,61 @@ cached schema-2 catalog. Custom catalogs are kept separate from the bundled cata
   preserves the Watch copy and uses an independent snapshot for transfers in flight.
 - No server upload, analytics, accounts or dictionary search API.
 
-Both devices use native bottom toolbars for the new-word button and optional Watch
-settings button. iPhone circular controls use the theme tint. iPhone definition text
+Watch uses native toolbar buttons: Settings at the upper left and new-word entry at the lower right.
+Circular controls share an explicit native control size, bright theme tint and black symbols.
+On iPhone, SwiftUI's native searchable field replaces the custom top search box.
+iOS 26+ places it in the bottom toolbar via `DefaultToolbarItem(kind: .search)`,
+including system Liquid Glass and a native inline dictation microphone when available. Older iOS
+versions retain the standard navigation search field and keyboard dictation.
+On first launch, both devices show the tutorial automatically; completing it opens word entry.
+On subsequent launches, search activates immediately when opening the app. Native controls dim behind
+modal sheets as the system intends. iPhone circular controls use the theme tint. iPhone definition text
 is larger, and British/American pronunciations share a row when they fit, falling
 back to separate rows when needed. Word forms and base forms have green section dividers.
 **Settings → Pronunciation order** saves British-first or American-first independently
-on each device. **Show tutorial again** at the bottom of Settings replays the guide
-without resetting onboarding, dictionary installations or the current lookup.
+on each device. **Show tutorial again** at the bottom of Settings reopens the guide.
+iPhone presents all three sections together, with a leading large navigation title and a
+bottom **Look up a word now** action. The content scrolls when needed for smaller screens
+or larger text. Replay uses a large sheet and **Done**. Watch retains native paged navigation,
+swipe hints and a completion button inside the final page’s scroll content. Replay preserves
+onboarding, dictionaries and the current lookup.
+
+Settings are ordered: pronunciation, default English dictionary and switch visibility,
+dictionary management, Watch settings access, app language, feedback, then tutorial replay.
+**Feedback** opens a system email request addressed to `instadict@candyrect.com`.
+The Watch also shows the address; the simulator has no Mail app, so verify the Mail handoff
+on a physical Watch with Mail configured.
+
+The Watch app embeds **InstaDict Watch Widgets**, a WidgetKit extension offering a circular
+launcher for the Smart Stack’s three-slot combination widget and compatible watch faces,
+and a rectangular **Open InstaDict** widget for the Smart Stack. The launcher uses a static
+timeline with no periodic refresh and opens the Watch app with `instadict://lookup`.
+The app handles this route by opening word entry after onboarding and dictionary setup.
+All three targets inherit build number **11** from the project. To change it in Xcode,
+select the blue InstaDict project, select **InstaDict under PROJECT** (not a target),
+then **Build Settings → Current Project Version**. With configurations collapsed,
+change the value once for Debug and Release. Leave target-level Build fields inherited;
+editing a target's General → Build field creates a target-specific override.
 
 ## Interface language
 
-On both devices, **Settings → App language** selects English or Simplified Chinese.
-The first launch uses the primary device language's language code: all `en` variants
-use English; all `zh` variants (including `zh-TW`, `zh-HK` and `zh-Hant`) use Simplified
-Chinese. Any other primary language falls back to English, even when Chinese appears
-farther down the device's language list. Traditional Chinese UI is not included.
+The Chinese app name is **闪词典**; the English name remains **InstaDict**.
+Each app and widget target includes localized `InfoPlist.strings` for its installed
+display name. Chinese UI and widget text use the same name. The system chooses the
+installed display name from its language settings; the in-app language picker controls
+UI text. App Store Connect listing names are configured separately.
 
-The initial choice and later changes are saved independently on each device. Changes
-apply immediately, including inside Settings. **Use device language** reapplies the
-current device-language default. UI language does not select a different dictionary
-or translate its definitions, example sentences, word forms, phonetic text or licenses.
-Pronunciation region labels, grammatical labels and word-form labels are localized
-at display time (for example, US/UK → 美/英 and past tense → 过去式).
+On both devices, **Settings → App language** lists **System** first, followed by
+English and Simplified Chinese. New installations default to System. It follows
+the primary device language by language family: `zh` variants (including `zh-TW`,
+`zh-HK` and `zh-Hant`) use Simplified Chinese; all other languages fall back to
+English. Traditional Chinese UI is not included.
+
+Explicit English/Chinese choices persist independently on each device and remain
+unchanged by device-language changes. Existing choices migrate from the previous
+picker. System selections refresh on activation and relaunch. Changes apply
+immediately, including inside Settings. UI language does not change dictionary
+content. Pronunciation regions, grammar and word-form labels are localized.
 
 Translations are shared in `Shared/Resources/Localizations/{en,zh-Hans}.lproj`.
 SwiftUI receives the selected locale, while dynamic messages use `L10n`. Persisted
@@ -142,15 +177,19 @@ fallback, persistence, grammatical labels, status messages and placeholder parit
 ## Watch behavior
 
 Before the first pack arrives, a short guide explains direct or iPhone setup. Afterwards,
-opening the app presents native word entry. English input defaults to English–English;
-**中 / EN** switches the same query between installed English packs. Chinese input
+opening the app presents native word entry. **Default English dictionary** initially uses
+English–Chinese for a Chinese device language and English–English for all other languages.
+This choice is saved once and can be changed in Settings, independently of the interface language.
+**中 / EN** switches the current query between English packs; the next word uses the saved default.
+**Show dictionary switch** is on by default and can be turned off in Settings. Chinese input
 selects Chinese–English automatically. A missing pack offers Settings/download guidance.
 
-Swipe left on a definition to open Settings. **Open settings** can instead select a
-lower-left button; the choice persists on the Watch. Settings is also available
+The upper-left Settings button is shown by default. **Open settings** can instead select
+**Swipe left** to hide that button on definitions; the choice persists on the Watch.
+The system controls the clock position; no public watchOS API overrides it. Settings is also available
 from setup and non-definition screens. **Manage dictionaries** supports direct
 HTTPS background downloads, progress, cancellation, verified installation, removal,
-catalog refresh and a custom source. The Watch handles URLSession background wakeups.
+catalog refresh. Download-source controls are hidden. The Watch handles URLSession background wakeups.
 Direct downloads and removals use the same ordered commands as iPhone transfers,
 so a late file cannot undo a newer action on either device.
 

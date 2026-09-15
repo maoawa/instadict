@@ -24,25 +24,51 @@ enum InterfaceLanguage: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum InterfaceLanguageSelection: String, CaseIterable, Identifiable, Sendable {
+    case system, english = "en", simplifiedChinese = "zh-Hans"
+    var id: String { rawValue }
+    var language: InterfaceLanguage? { InterfaceLanguage(rawValue: rawValue) }
+}
+
 @MainActor @Observable
 final class LanguageSettings {
     static let shared = LanguageSettings()
     static let preferenceKey = "interfaceLanguage.v1"
+    static let selectionKey = "interfaceLanguageSelection.v2"
     @ObservationIgnored private let defaults: UserDefaults
+    private var deviceLanguage: InterfaceLanguage
+    var selection: InterfaceLanguageSelection {
+        didSet { persist() }
+    }
     var language: InterfaceLanguage {
-        didSet { defaults.set(language.rawValue, forKey: Self.preferenceKey) }
+        get { selection.language ?? deviceLanguage }
+        set { selection = InterfaceLanguageSelection(rawValue: newValue.rawValue)! }
     }
 
     init(defaults: UserDefaults = .standard, preferredLanguages: [String] = Locale.preferredLanguages) {
         self.defaults = defaults
-        language = defaults.string(forKey: Self.preferenceKey).flatMap(InterfaceLanguage.init(rawValue:))
-            ?? InterfaceLanguage.deviceDefault(preferredLanguages: preferredLanguages)
-        // Persist the first choice; subsequent device-language changes must not
-        // silently replace the language chosen inside InstaDict.
-        defaults.set(language.rawValue, forKey: Self.preferenceKey)
+        deviceLanguage = .deviceDefault(preferredLanguages: preferredLanguages)
+        // Preserve existing explicit choices when upgrading from the old picker.
+        selection = defaults.string(forKey: Self.selectionKey).flatMap(InterfaceLanguageSelection.init(rawValue:))
+            ?? defaults.string(forKey: Self.preferenceKey).flatMap(InterfaceLanguageSelection.init(rawValue:))
+            ?? .system
+        persist()
     }
 
-    func useDeviceLanguage() { language = .deviceDefault(preferredLanguages: Locale.preferredLanguages) }
+    func refreshDeviceLanguage(preferredLanguages: [String] = Locale.preferredLanguages) {
+        deviceLanguage = .deviceDefault(preferredLanguages: preferredLanguages)
+        persist()
+    }
+
+    func useDeviceLanguage() {
+        refreshDeviceLanguage()
+        selection = .system
+    }
+
+    private func persist() {
+        defaults.set(selection.rawValue, forKey: Self.selectionKey)
+        defaults.set(language.rawValue, forKey: Self.preferenceKey)
+    }
 }
 
 enum L10n {

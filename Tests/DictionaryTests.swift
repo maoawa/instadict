@@ -244,7 +244,11 @@ private struct Fixture {
     defer { try? FileManager.default.removeItem(at: root) }
     let library = DictionaryLibrary(root: root)
     try await library.install(file(.englishEnglish), pack: pack(.englishEnglish))
-    let model = LookupModel(library: library)
+    let name = "InstaDict.LookupModelTests." + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let preferences = LookupPreferences(defaults: defaults, preferredLanguages: ["en-GB"])
+    let model = LookupModel(library: library, preferences: preferences)
     model.lookUp("hello ")
     try await waitForDefinition(model, word: "hello")
     model.switchLanguage()
