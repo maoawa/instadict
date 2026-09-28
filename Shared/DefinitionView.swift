@@ -11,6 +11,7 @@ struct DefinitionView: View {
     let language: DictionaryLanguage
     let onLookup: (String) -> Void
     @AppStorage(PronunciationOrder.preferenceKey) private var pronunciationOrder = PronunciationOrder.britishFirst
+    @State private var wordBook = WordBookStore.shared
 
     var body: some View {
         ScrollView {
@@ -62,6 +63,16 @@ struct DefinitionView: View {
                         }
                     }
                 }
+                Button {
+                    wordBook.add(entry.word)
+                } label: {
+                    Label(wordBook.contains(entry.word) ? "Added to Word Book" : "Add to Word Book",
+                          systemImage: wordBook.contains(entry.word) ? "checkmark.circle.fill" : "book.closed")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(wordBook.contains(entry.word))
+                .padding(.top, 8)
 
             }
             .frame(maxWidth: 680, alignment: .leading)

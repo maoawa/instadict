@@ -14,6 +14,7 @@ struct PhoneLookupView: View {
     @State private var promptAfterSettings = false
     @State private var searchPresented = false
     @State private var hasStarted = false
+    @State private var pendingWordBookLookup: String?
 
     var body: some View {
         NavigationStack {
@@ -51,11 +52,16 @@ struct PhoneLookupView: View {
         .autocorrectionDisabled()
         .onSubmit(of: .search, search)
         .sheet(isPresented: $showingSettings, onDismiss: {
-            if promptAfterSettings, hasCompletedIntroduction {
+            if let pendingWordBookLookup {
+                self.pendingWordBookLookup = nil
+                lookUp(pendingWordBookLookup)
+            } else if promptAfterSettings, hasCompletedIntroduction {
                 promptAfterSettings = false
                 searchPresented = true
             }
-        }) { PhoneSettingsView() }
+        }) {
+            PhoneSettingsView { pendingWordBookLookup = $0 }
+        }
         .fullScreenCover(isPresented: $showingIntroduction, onDismiss: {
             if hasCompletedIntroduction { searchPresented = true }
         }) {
@@ -175,12 +181,17 @@ struct PhoneLookupView: View {
 }
 
 private struct PhoneSettingsView: View {
+    let onSelectWord: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var showingTutorial = false
 
     var body: some View {
         NavigationStack {
             Form {
+                WordBookSettingsSection {
+                    onSelectWord($0)
+                    dismiss()
+                }
                 Section { PronunciationOrderPicker() }
                 Section { LookupPreferencesPicker() }
                 NavigationLink {
@@ -188,6 +199,7 @@ private struct PhoneSettingsView: View {
                 } label: { Label("Manage dictionaries", systemImage: "books.vertical") }
                 Section { InterfaceLanguagePicker() }
                 Section { FeedbackButton() }
+                TestFlightRatingPromptButton()
                 Section {
                     Button("Show tutorial again", systemImage: "questionmark.circle") { showingTutorial = true }
                 }
@@ -200,6 +212,7 @@ private struct PhoneSettingsView: View {
             }
         }
         .sheet(isPresented: $showingTutorial) { TutorialSheet() }
+        .ratingInvitation()
         #if DEBUG
         .task {
             if ProcessInfo.processInfo.arguments.contains("--preview-tutorial") { showingTutorial = true }

@@ -14,6 +14,7 @@ struct InstaDict_Watch_AppApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .trackRatingUsage()
                 .environment(\.locale, languageSettings.language.locale)
         }
     }

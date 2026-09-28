@@ -201,7 +201,14 @@ struct WatchLibraryStatus: Codable, Equatable, Sendable {
 
 struct DictionaryStatusReply: Codable, Sendable {
     var inventory: WatchLibraryStatus?
+    var wordBook: Data?
     var error: String?
+
+    init(inventory: WatchLibraryStatus? = nil, wordBook: Data? = nil, error: String? = nil) {
+        self.inventory = inventory
+        self.wordBook = wordBook
+        self.error = error
+    }
 }
 
 enum PackError: Error, LocalizedError {

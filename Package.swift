@@ -10,8 +10,8 @@ let package = Package(
         .target(
             name: "InstaDictCore",
             path: "Shared",
-            exclude: ["Resources/DictionaryCatalog.json", "DictionarySync.swift", "DictionaryDownloads.swift", "DefinitionView.swift", "LanguagePicker.swift", "IntroductionView.swift", "ButtonStyles.swift", "FeedbackButton.swift"],
-            sources: ["DictionaryEntry.swift", "DictionaryText.swift", "DictionaryStore.swift", "LookupModel.swift", "DictionaryPack.swift", "DictionaryLibrary.swift", "Localization.swift", "PronunciationPreference.swift", "LookupPreferences.swift"],
+            exclude: ["Resources/DictionaryCatalog.json", "DictionarySync.swift", "DictionaryDownloads.swift", "DefinitionView.swift", "LanguagePicker.swift", "IntroductionView.swift", "ButtonStyles.swift", "FeedbackButton.swift", "RatingPromptView.swift"],
+            sources: ["DictionaryEntry.swift", "DictionaryText.swift", "DictionaryStore.swift", "LookupModel.swift", "DictionaryPack.swift", "DictionaryLibrary.swift", "Localization.swift", "PronunciationPreference.swift", "LookupPreferences.swift", "ReviewStore.swift", "RatingPromptTracker.swift", "TestFlightSupport.swift"],
             resources: [.process("Resources/Localizations")],
             linkerSettings: [.linkedLibrary("sqlite3"), .linkedLibrary("z")]
         ),

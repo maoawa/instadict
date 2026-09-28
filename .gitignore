@@ -1,10 +1,19 @@
 .DS_Store
 .build/
+.swiftpm/
 .dictionary-sources/
 build/
 build-*/
+DerivedData/
 *.xcuserstate
 xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+*.moved-aside
+*.xcarchive
+*.ipa
+*.dSYM
+*.dSYM.zip
 __pycache__/
 
 # Generated CDN artifacts; keep the catalog, notices and upload instructions.

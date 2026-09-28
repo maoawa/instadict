@@ -8,6 +8,8 @@ struct InstaDictApp: App {
     var body: some Scene {
         WindowGroup {
             PhoneLookupView()
+                .trackRatingUsage()
+                .companionReviewReceiver()
                 .environment(\.locale, languageSettings.language.locale)
                 .environment(DictionaryDownloads.shared)
                 .environment(DictionarySync.shared)

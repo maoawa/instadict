@@ -11,4 +11,31 @@ extension View {
             .tint(Color(red: 0.69, green: 0.886, blue: 0.702))
             .foregroundStyle(.black)
     }
+
+    @ViewBuilder
+    func instaDictBackButton() -> some View {
+        #if os(watchOS)
+        modifier(WatchBackButton())
+        #else
+        self
+        #endif
+    }
 }
+
+#if os(watchOS)
+private struct WatchBackButton: ViewModifier {
+    @Environment(\.dismiss) private var dismiss
+
+    func body(content: Content) -> some View {
+        content
+            .navigationBarBackButtonHidden()
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Back", systemImage: "chevron.left") { dismiss() }
+                        .labelStyle(.iconOnly)
+                        .instaDictCircleButton()
+                }
+            }
+    }
+}
+#endif

@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var inputRequest: UUID?
     @State private var showingSettings = false
     @State private var promptAfterSettings = false
+    @State private var pendingWordBookLookup: String?
     @AppStorage("watchSettingsAccess") private var settingsAccess = WatchSettingsAccess.button
 
     private var isDefinition: Bool {
@@ -72,9 +73,14 @@ struct ContentView: View {
         .sheet(isPresented: $showingSettings, onDismiss: {
             let shouldPrompt = promptAfterSettings || model.lastQuery.isEmpty
             promptAfterSettings = false
-            if shouldPrompt, hasCompletedIntroduction { requestInput() }
+            if let pendingWordBookLookup {
+                self.pendingWordBookLookup = nil
+                model.lookUp(pendingWordBookLookup)
+            } else if shouldPrompt, hasCompletedIntroduction { requestInput() }
         }) {
-            WatchSettingsView()
+            WatchSettingsView {
+                pendingWordBookLookup = $0
+            }
         }
         .task {
             sync.start()

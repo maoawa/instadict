@@ -3,7 +3,21 @@ import Observation
 import WatchConnectivity
 #if os(watchOS)
 import WatchKit
+#elseif os(iOS)
+import UIKit
 #endif
+
+private struct CompanionURLRequest: Codable {
+    let url: String
+}
+
+private struct CompanionReviewRequest: Codable {
+    let requestReview: Bool
+}
+
+private struct WordBookSyncMessage: Codable {
+    let data: Data
+}
 
 /// Owns WCSession on both devices. Receipts, rather than transport completion,
 /// determine whether a dictionary is installed on the Watch.
@@ -20,18 +34,25 @@ final class DictionarySync: NSObject, WCSessionDelegate {
     private(set) var isCheckingWatch = false
     private(set) var watchStatusMessage: String?
     @ObservationIgnored private let library = DictionaryLibrary.shared
+    @ObservationIgnored private let wordBook = WordBookStore.shared
     @ObservationIgnored private var started = false
     @ObservationIgnored private var observations: [ObjectIdentifier: NSKeyValueObservation] = [:]
     @ObservationIgnored private var commands: [PackCommand] = []
     @ObservationIgnored private var statusRequest: UUID?
     @ObservationIgnored private var statusTimeout: Task<Void, Never>?
     @ObservationIgnored private var installingFiles: Set<URL> = []
+    @ObservationIgnored private var wordBookObserver: NSObjectProtocol?
     @ObservationIgnored private let session: WCSession? = WCSession.isSupported() ? .default : nil
     private static let commandsKey = "dictionarySyncCommands.v2"
 
     func start() {
         guard !started else { return }
         started = true
+        wordBookObserver = NotificationCenter.default.addObserver(
+            forName: WordBookStore.didChangeNotification, object: wordBook, queue: .main
+        ) { [weak self] _ in
+            self?.publishWordBook()
+        }
         if let data = UserDefaults.standard.data(forKey: Self.commandsKey) {
             commands = (try? JSONDecoder().decode([PackCommand].self, from: data)) ?? []
         }
@@ -43,6 +64,48 @@ final class DictionarySync: NSObject, WCSessionDelegate {
         session.delegate = self
         session.activate()
     }
+
+    private func publishWordBook() {
+        guard let session, session.activationState == .activated,
+              let data = wordBook.syncData() else { return }
+        #if os(iOS)
+        try? publishCommands()
+        #else
+        publishWatchStatus()
+        #endif
+        if session.isReachable {
+            let message = (try? JSONEncoder().encode(WordBookSyncMessage(data: data))) ?? Data()
+            session.sendMessageData(message, replyHandler: nil, errorHandler: nil)
+        } else {
+            session.transferUserInfo(["wordBook": data])
+        }
+    }
+
+    #if os(watchOS)
+    /// Ask the paired iPhone to open a link, such as the App Store review page,
+    /// in its native system application.
+    func openCompanionURL(_ url: URL) {
+        start()
+        guard let session, let data = try? JSONEncoder().encode(CompanionURLRequest(url: url.absoluteString)) else { return }
+        if session.isReachable {
+            session.sendMessageData(data, replyHandler: nil, errorHandler: nil)
+        } else {
+            session.transferUserInfo(["openURL": url.absoluteString])
+        }
+    }
+
+    /// Ask the active iPhone app to present StoreKit's native review request.
+    func requestCompanionReview() {
+        start()
+        guard let session,
+              let data = try? JSONEncoder().encode(CompanionReviewRequest(requestReview: true)) else { return }
+        if session.isReachable {
+            session.sendMessageData(data, replyHandler: nil, errorHandler: nil)
+        } else {
+            session.transferUserInfo(["requestReview": true])
+        }
+    }
+    #endif
 
     func refreshLocal() async {
         do { local = try await library.snapshot() }
@@ -79,6 +142,10 @@ final class DictionarySync: NSObject, WCSessionDelegate {
                         let reply = try JSONDecoder().decode(DictionaryStatusReply.self, from: data)
                         if let snapshot = reply.inventory {
                             self.receiveInventory(snapshot)
+                            if let data = reply.wordBook {
+                                _ = self.wordBook.mergeSyncData(data)
+                                try? self.publishCommands()
+                            }
                             self.finishStatusCheck(request, error: reply.error)
                         } else {
                             self.finishStatusCheck(request, error: reply.error ?? "The Watch couldn’t read its dictionary library.")
@@ -197,7 +264,9 @@ final class DictionarySync: NSObject, WCSessionDelegate {
 
     private func publishCommands() throws {
         guard let session, session.activationState == .activated else { return }
-        try session.updateApplicationContext(["commands": try JSONEncoder().encode(commands)])
+        var context: [String: Any] = ["commands": try JSONEncoder().encode(commands)]
+        if let data = wordBook.syncData() { context["wordBook"] = data }
+        try session.updateApplicationContext(context)
     }
 
     private func observe(_ transfer: WCSessionFileTransfer, id: DictionaryID) {
@@ -258,6 +327,9 @@ final class DictionarySync: NSObject, WCSessionDelegate {
            let snapshot = try? JSONDecoder().decode(WatchLibraryStatus.self, from: data) {
             receiveInventory(snapshot)
         }
+        if let data = context["wordBook"] as? Data, wordBook.mergeSyncData(data) {
+            try? publishCommands()
+        }
         #else
         if let data = context["commands"] as? Data,
            let commands = try? JSONDecoder().decode([PackCommand].self, from: data) {
@@ -266,6 +338,10 @@ final class DictionarySync: NSObject, WCSessionDelegate {
                 catch { connectionMessage = L10n.errorMessage(error) }
                 await refreshLocal()
             }
+        }
+        if let data = context["wordBook"] as? Data {
+            _ = wordBook.mergeSyncData(data)
+            publishWatchStatus()
         }
         #endif
     }
@@ -289,7 +365,9 @@ final class DictionarySync: NSObject, WCSessionDelegate {
     private func publishWatchStatus() {
         guard let session, session.activationState == .activated,
               let data = try? JSONEncoder().encode(local) else { return }
-        try? session.updateApplicationContext(["inventory": data])
+        var context: [String: Any] = ["inventory": data]
+        if let wordBookData = wordBook.syncData() { context["wordBook"] = wordBookData }
+        try? session.updateApplicationContext(context)
         if session.isReachable {
             session.sendMessageData(data, replyHandler: nil, errorHandler: { _ in
                 // The application context remains the background fallback.
@@ -335,18 +413,73 @@ final class DictionarySync: NSObject, WCSessionDelegate {
         // Copy only the encoded payload across the actor boundary.
         let commands = applicationContext["commands"] as? Data
         let inventory = applicationContext["inventory"] as? Data
+        let wordBook = applicationContext["wordBook"] as? Data
         Task { @MainActor in
             var context: [String: Any] = [:]
             context["commands"] = commands
             context["inventory"] = inventory
+            context["wordBook"] = wordBook
             self.receiveContext(context)
         }
     }
     nonisolated func session(_ session: WCSession, didReceiveMessageData messageData: Data) {
+        if let request = try? JSONDecoder().decode(CompanionReviewRequest.self, from: messageData),
+           request.requestReview {
+            #if os(iOS)
+            Task { @MainActor in
+                UserDefaults.standard.set(true, forKey: RatingPromptSupport.pendingCompanionReviewKey)
+                NotificationCenter.default.post(name: .instadictCompanionReviewRequest, object: nil)
+            }
+            #endif
+            return
+        }
+        if let request = try? JSONDecoder().decode(CompanionURLRequest.self, from: messageData),
+           let url = URL(string: request.url) {
+            #if os(iOS)
+            Task { @MainActor in UIApplication.shared.open(url) }
+            #endif
+            return
+        }
+        if let message = try? JSONDecoder().decode(WordBookSyncMessage.self, from: messageData) {
+            Task { @MainActor in
+                _ = self.wordBook.mergeSyncData(message.data)
+                #if os(iOS)
+                try? self.publishCommands()
+                #else
+                self.publishWatchStatus()
+                #endif
+            }
+            return
+        }
         #if os(iOS)
         guard let snapshot = try? JSONDecoder().decode(WatchLibraryStatus.self, from: messageData) else { return }
         Task { @MainActor in self.receiveInventory(snapshot) }
         #endif
+    }
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String : Any] = [:]) {
+        #if os(iOS)
+        if userInfo["requestReview"] as? Bool == true {
+            Task { @MainActor in
+                UserDefaults.standard.set(true, forKey: RatingPromptSupport.pendingCompanionReviewKey)
+                NotificationCenter.default.post(name: .instadictCompanionReviewRequest, object: nil)
+            }
+            return
+        }
+        if let rawURL = userInfo["openURL"] as? String, let url = URL(string: rawURL) {
+            Task { @MainActor in UIApplication.shared.open(url) }
+            return
+        }
+        #endif
+        if let data = userInfo["wordBook"] as? Data {
+            Task { @MainActor in
+                _ = self.wordBook.mergeSyncData(data)
+                #if os(iOS)
+                try? self.publishCommands()
+                #else
+                self.publishWatchStatus()
+                #endif
+            }
+        }
     }
     nonisolated func session(_ session: WCSession, didReceiveMessageData messageData: Data,
                              replyHandler: @escaping (Data) -> Void) {
@@ -357,7 +490,8 @@ final class DictionarySync: NSObject, WCSessionDelegate {
                 let commands = try JSONDecoder().decode([PackCommand].self, from: messageData)
                 try await self.library.apply(commands)
                 await self.refreshLocal()
-                reply = DictionaryStatusReply(inventory: try await self.library.snapshot())
+                reply = DictionaryStatusReply(inventory: try await self.library.snapshot(),
+                                               wordBook: self.wordBook.syncData())
             } catch { reply = DictionaryStatusReply(error: L10n.errorMessage(error)) }
             replyHandler((try? JSONEncoder().encode(reply)) ?? Data())
         }

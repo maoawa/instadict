@@ -19,13 +19,16 @@ func englishLookupDefaultsForChineseVariants(_ identifier: String) {
     let initial = LookupPreferences(defaults: defaults, preferredLanguages: ["zh-TW"])
     #expect(initial.englishDictionary == .englishChinese)
     #expect(initial.showsLanguageSwitch)
+    #expect(initial.wordBookAutoAddRule == .afterTwo)
     let reopened = LookupPreferences(defaults: defaults, preferredLanguages: ["en-GB"])
     #expect(reopened.englishDictionary == .englishChinese)
     reopened.englishDictionary = .englishEnglish
     reopened.showsLanguageSwitch = false
+    reopened.wordBookAutoAddRule = .never
     let changed = LookupPreferences(defaults: defaults, preferredLanguages: ["zh-HK"])
     #expect(changed.englishDictionary == .englishEnglish)
     #expect(!changed.showsLanguageSwitch)
+    #expect(changed.wordBookAutoAddRule == .never)
     #expect(EnglishLookupDictionary.deviceDefault(preferredLanguages: []) == .englishEnglish)
     #expect(EnglishLookupDictionary.deviceDefault(preferredLanguages: ["ja-JP", "zh-CN"]) == .englishEnglish)
 }

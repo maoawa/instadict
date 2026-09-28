@@ -7,6 +7,7 @@ enum WatchSettingsAccess: String, CaseIterable, Identifiable {
 }
 
 struct WatchSettingsView: View {
+    let onSelectWord: (String) -> Void
     @AppStorage("watchSettingsAccess") private var access = WatchSettingsAccess.button
     @Environment(\.dismiss) private var dismiss
     @State private var showingTutorial = false
@@ -14,13 +15,18 @@ struct WatchSettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                WordBookSettingsSection {
+                    onSelectWord($0)
+                    dismiss()
+                }
                 Section { PronunciationOrderPicker() }
                 Section { LookupPreferencesPicker() }
                 NavigationLink {
                     WatchDictionariesView()
                 } label: { Label("Manage dictionaries", systemImage: "books.vertical") }
                 Section {
-                    Picker("Open settings", selection: $access) {
+                    SettingsPicker("Open settings", selection: $access,
+                                   selectedValue: Text(LocalizedStringKey(access.title))) {
                         ForEach(WatchSettingsAccess.allCases) { choice in
                             Text(LocalizedStringKey(choice.title)).tag(choice)
                         }
@@ -32,6 +38,7 @@ struct WatchSettingsView: View {
                 Section { FeedbackButton() } footer: {
                     Text(verbatim: "instadict@candyrect.com")
                 }
+                TestFlightRatingPromptButton()
                 Section {
                     Button("Show tutorial again", systemImage: "questionmark.circle") { showingTutorial = true }
                 }
@@ -45,6 +52,7 @@ struct WatchSettingsView: View {
             }
         }
         .sheet(isPresented: $showingTutorial) { TutorialSheet() }
+        .ratingInvitation()
     }
 }
 
@@ -85,6 +93,7 @@ struct WatchDictionariesView: View {
             .disabled(downloads.isRefreshing)
         }
         .navigationTitle("Dictionaries")
+        .instaDictBackButton()
         .task {
             downloads.start()
             await sync.refreshLocal()
@@ -137,6 +146,7 @@ private struct WatchDictionaryDetailView: View {
             }
         }
         .navigationTitle(LocalizedStringKey(pack.id.title))
+        .instaDictBackButton()
         .confirmationDialog(L10n.ui("Remove %@ from this Watch?", L10n.ui(pack.id.title)), isPresented: $confirmingRemoval, titleVisibility: .visible) {
             Button("Cancel", role: .cancel) {}
             Button("Remove dictionary", role: .destructive) {
@@ -172,6 +182,7 @@ private struct WatchDownloadSourceView: View {
             if let message { Text(L10n.message(message)).font(.footnote) }
         }
         .navigationTitle("Download source")
+        .instaDictBackButton()
         .onAppear { address = downloads.editableSourceAddress }
     }
 
